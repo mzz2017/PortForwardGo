@@ -33,21 +33,13 @@ func LoadTCPRules(i string) {
 		
 		Setting.mu.RLock()
 		rule := Setting.Config.Rules[i]
-
-		if rule.Status != "Active" && rule.Status != "Created" {
-			Setting.mu.RUnlock()
-			conn.Close()
-			continue
-		}
-
-		if Setting.Config.Users[rule.UserID].Used > Setting.Config.Users[rule.UserID].Quota { 			
-			Setting.mu.RUnlock()
-			conn.Close()
-			continue
-		}
-
 		Setting.mu.RUnlock()
 
+		if rule.Status != "Active" && rule.Status != "Created" {
+			conn.Close()
+			continue
+		}
+		
 		go tcp_handleRequest(conn, i, rule)
 	}
 }

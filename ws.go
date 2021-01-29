@@ -38,15 +38,15 @@ func LoadWSRules(i string){
 	Setting.Listener.WS[i] = ln
 	Setting.mu.Unlock()
 
-	http.Handle("/ws/",websocket.Handler(func(ws *websocket.Conn){
-		WS_Handle(i,ws)
-	}))
-
 	http.HandleFunc("/",func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(404)
 		io.WriteString(w,Page404)
 		return
 	})
+
+	http.Handle("/ws/",websocket.Handler(func(ws *websocket.Conn){
+		WS_Handle(i,ws)
+	}))
 
 	http.Serve(ln,nil)
 }
@@ -71,20 +71,12 @@ func WS_Handle(i string , ws *websocket.Conn){
 	ws.PayloadType = websocket.BinaryFrame
 	Setting.mu.RLock()
 	rule := Setting.Config.Rules[i]
+    Setting.mu.RUnlock()
 
 	if rule.Status != "Active" && rule.Status != "Created" {
-		Setting.mu.RUnlock()
 		ws.Close()
 		return
 	}
-
-	if Setting.Config.Users[rule.UserID].Used > Setting.Config.Users[rule.UserID].Quota { 			
-		Setting.mu.RUnlock()
-		ws.Close()
-		return
-	}
-
-    Setting.mu.RUnlock()
 
    conn,err := net.Dial("tcp" , rule.Forward)
    if err != nil {

@@ -154,20 +154,12 @@ func https_handle(conn net.Conn) {
 
 	Setting.mu.RLock()
 	rule := Setting.Config.Rules[i]
+	Setting.mu.RUnlock()
 
 	if rule.Status != "Active" && rule.Status != "Created" {
-		Setting.mu.RUnlock()
 		conn.Close()
 		return
 	}
-
-	if Setting.Config.Users[rule.UserID].Used > Setting.Config.Users[rule.UserID].Quota {
-		Setting.mu.RUnlock()
-		conn.Close()	
-		return
-	}
-
-	Setting.mu.RUnlock()
 
 	backend, error := net.Dial("tcp", rule.Forward)
 	if error != nil {

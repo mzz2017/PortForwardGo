@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"net"
 	"time"
 	"PortForwardGo/zlog"
@@ -9,7 +8,6 @@ import (
 )
 
 type UDPDistribute struct {
-	Established bool
 	Conn        *(net.UDPConn)
 	RAddr       net.Addr
 	LAddr       net.Addr
@@ -18,7 +16,6 @@ type UDPDistribute struct {
 
 func NewUDPDistribute(conn *(net.UDPConn), addr net.Addr) (*UDPDistribute) {
 	return &UDPDistribute{
-		Established: true,
 		Conn:        conn,
 		RAddr:       addr,
 		LAddr:       conn.LocalAddr(),
@@ -27,18 +24,11 @@ func NewUDPDistribute(conn *(net.UDPConn), addr net.Addr) (*UDPDistribute) {
 }
 
 func (this *UDPDistribute) Close() (error) {
-	this.Established = false
 	return nil
 }
 
 func (this *UDPDistribute) Read(b []byte) (n int, err error) {
-	if !this.Established {
-		return 0, errors.New("udp distrubute has closed")
-	}
-
 	select {
-	case <-time.After(16 * time.Second):
-		return 0, errors.New("udp distrubute read timeout")
 	case data := <-this.Cache:
 		n := len(data)
 		copy(b, data)
@@ -47,10 +37,7 @@ func (this *UDPDistribute) Read(b []byte) (n int, err error) {
 }
 
 func (this *UDPDistribute) Write(b []byte) (n int, err error) {
-	if !this.Established {
-		return 0, errors.New("udp distrubute has closed")
-	}
-	return this.Conn.WriteTo(b, this.RAddr)
+	return this.Conn.WriteTo(b,this.RAddr)
 }
 
 func (this *UDPDistribute) RemoteAddr() (net.Addr) {
@@ -105,18 +92,12 @@ func LoadUDPRules(i string){
 
 		Setting.mu.RLock()
 		rule := Setting.Config.Rules[i]
-		if rule.Status != "Active" && rule.Status != "Created" {
-			Setting.mu.RUnlock()
-			conn.Close()
-			continue
-		}
-
-		if Setting.Config.Users[rule.UserID].Used > Setting.Config.Users[rule.UserID].Quota {
-			Setting.mu.RUnlock()
-			conn.Close()
-			continue
-		}
 		Setting.mu.RUnlock()
+
+		if rule.Status != "Active" && rule.Status != "Created" {
+			conn.Close()
+			continue
+		}
 
 		go udp_handleRequest(conn,i,rule)
 	}
@@ -166,17 +147,13 @@ func AcceptUDP(serv *net.UDPConn, clientc chan net.Conn) {
 				continue
 			}
 			clientc <- nil
-			return
+			break
 		}
 		buf = buf[:n]
 
 		if d, ok := table[addr.String()]; ok {
-			if d.Established {
-				d.Cache <- buf
-				continue
-			} else {
-				delete(table, addr.String())
-			}
+			d.Cache <- buf
+			continue
 		}
 		conn := NewUDPDistribute(serv, addr)
 		table[addr.String()] = conn
