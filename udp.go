@@ -24,6 +24,7 @@ func NewUDPDistribute(conn *(net.UDPConn), addr net.Addr) (*UDPDistribute) {
 }
 
 func (this *UDPDistribute) Close() (error) {
+	this.Cache = make(chan []byte,16)
 	return nil
 }
 
@@ -156,9 +157,9 @@ func AcceptUDP(serv *net.UDPConn, clientc chan net.Conn) {
 			continue
 		}
 		conn := NewUDPDistribute(serv, addr)
+		clientc <- conn
 		table[addr.String()] = conn
 		conn.Cache <- buf
-		clientc <- conn
 	}
 }
 
