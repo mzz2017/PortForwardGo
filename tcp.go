@@ -51,11 +51,11 @@ func DeleteTCPRules(i string){
 		time.Sleep(time.Second)
 		err = Setting.Listener.TCP[i].Close()
 		}
+	    delete(Setting.Listener.TCP,i)
 	}
 	Setting.mu.Lock()
 	zlog.Info("Deleted [",i,"] (TCP)", Setting.Config.Rules[i].Listen, " => ", Setting.Config.Rules[i].Forward)
 	delete(Setting.Config.Rules,i)
-	delete(Setting.Listener.TCP,i)
 	Setting.mu.Unlock()
 }
 

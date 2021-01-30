@@ -51,11 +51,11 @@ func DeleteKCPRules(i string){
 		time.Sleep(time.Second)
 		err = Setting.Listener.KCP[i].Close()
 		}
+	    delete(Setting.Listener.KCP,i)
 	}
 	Setting.mu.Lock()
 	zlog.Info("Deleted [",i,"] (KCP)", Setting.Config.Rules[i].Listen, " => ", Setting.Config.Rules[i].Forward)
 	delete(Setting.Config.Rules,i)
-	delete(Setting.Listener.KCP,i)
 	Setting.mu.Unlock()
 }
 

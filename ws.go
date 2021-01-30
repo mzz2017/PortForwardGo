@@ -58,11 +58,11 @@ func DeleteWSRules(i string){
 		time.Sleep(time.Second)
 		err = Setting.Listener.WS[i].Close()
 		}
+		delete(Setting.Listener.WS,i)
 	}
 	Setting.mu.Lock()
 	zlog.Info("Deleted [",i,"] (WebSocket)", Setting.Config.Rules[i].Listen, " => ", Setting.Config.Rules[i].Forward)
 	delete(Setting.Config.Rules,i)
-	delete(Setting.Listener.WS,i)
 	Setting.mu.Unlock()
 }
 

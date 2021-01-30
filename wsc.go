@@ -55,11 +55,11 @@ func DeleteWSCRules(i string){
 		time.Sleep(time.Second)
 		err = Setting.Listener.WSC[i].Close()
 		}
+	    delete(Setting.Listener.WSC,i)
 	}
 	Setting.mu.Lock()
 	zlog.Info("Deleted [",i,"] (WebSocket Client)", Setting.Config.Rules[i].Listen, " => ", Setting.Config.Rules[i].Forward)
 	delete(Setting.Config.Rules,i)
-	delete(Setting.Listener.WSC,i)
 	Setting.mu.Unlock()
 }
 

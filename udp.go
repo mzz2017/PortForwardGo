@@ -111,10 +111,10 @@ func DeleteUDPRules(i string){
 	time.Sleep(time.Second)
 	err = Setting.Listener.UDP[i].Close()
 	}
+	delete(Setting.Listener.UDP,i)
     }
 	Setting.mu.Lock()
 	delete(Setting.Config.Rules,i)
-	delete(Setting.Listener.UDP,i)
 	Setting.mu.Unlock()
 }
 
