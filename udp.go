@@ -88,19 +88,19 @@ func LoadUDPRules(i string){
 		case conn = <-clientc:
 			if conn == nil {
 				break
+			}else{
+				Setting.mu.RLock()
+				rule := Setting.Config.Rules[i]
+				Setting.mu.RUnlock()
+		
+				if rule.Status != "Active" && rule.Status != "Created" {
+					conn.Close()
+					continue
+				}
+		
+				go udp_handleRequest(conn,i,rule)
 			}
 		}
-
-		Setting.mu.RLock()
-		rule := Setting.Config.Rules[i]
-		Setting.mu.RUnlock()
-
-		if rule.Status != "Active" && rule.Status != "Created" {
-			conn.Close()
-			continue
-		}
-
-		go udp_handleRequest(conn,i,rule)
 	}
 }
 		
