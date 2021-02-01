@@ -8,6 +8,7 @@ import (
 )
 
 type UDPDistribute struct {
+	Connected   bool
 	Conn        *(net.UDPConn)
 	RAddr       net.Addr
 	LAddr       net.Addr
@@ -16,6 +17,7 @@ type UDPDistribute struct {
 
 func NewUDPDistribute(conn *(net.UDPConn), addr net.Addr) (*UDPDistribute) {
 	return &UDPDistribute{
+	    Connected:   true,
 		Conn:        conn,
 		RAddr:       addr,
 		LAddr:       conn.LocalAddr(),
@@ -24,7 +26,7 @@ func NewUDPDistribute(conn *(net.UDPConn), addr net.Addr) (*UDPDistribute) {
 }
 
 func (this *UDPDistribute) Close() (error) {
-	this.Cache = make(chan []byte,16)
+	this.Connected = false
 	return nil
 }
 
@@ -153,8 +155,12 @@ func AcceptUDP(serv *net.UDPConn, clientc chan net.Conn) {
 		buf = buf[:n]
 
 		if d, ok := table[addr.String()]; ok {
+			if d.Connected {
 			d.Cache <- buf
 			continue
+			}else{
+				delete(table,addr.String())
+			}
 		}
 		conn := NewUDPDistribute(serv, addr)
 		clientc <- conn
