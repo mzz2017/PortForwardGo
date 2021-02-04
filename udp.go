@@ -37,9 +37,7 @@ func (this *UDPDistribute) Close() error {
 func (this *UDPDistribute) Read(b []byte) (n int, err error) {
 	select {
 	case data := <-this.Cache:
-		n := len(data)
-		copy(b, data)
-		return n, nil
+		return copy(b, data), nil
 	}
 }
 
