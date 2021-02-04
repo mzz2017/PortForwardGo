@@ -58,6 +58,7 @@ func (this *UDPDistribute) SetDeadline(t time.Time) error {
 }
 
 func (this *UDPDistribute) SetReadDeadline(t time.Time) error {
+	// FIXME
 	return this.Conn.SetReadDeadline(t)
 }
 
