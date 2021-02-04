@@ -29,16 +29,16 @@ func NewUDPDistribute(conn *(net.UDPConn), addr net.Addr) (*UDPDistribute) {
 
 func (this *UDPDistribute) Close() error {
 	this.PropertyMutex.Lock()
-	this.Connected = false
+	if this.Connected{
+		this.Connected = false
+		close(this.Cache)
+	}
 	this.PropertyMutex.Unlock()
 	return nil
 }
 
 func (this *UDPDistribute) Read(b []byte) (n int, err error) {
-	select {
-	case data := <-this.Cache:
-		return copy(b, data), nil
-	}
+	return copy(b, <-this.Cache), nil
 }
 
 func (this *UDPDistribute) Write(b []byte) (n int, err error) {
