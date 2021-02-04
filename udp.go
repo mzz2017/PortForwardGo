@@ -94,7 +94,10 @@ func DeleteUDPRules(i string){
 func UDPRelay(src, dst *net.UDPConn, writeTo net.Addr, index string) {
 		// handle coping by hand to keep connection dynamically
 		d := NewUDPDistribute(dst, writeTo)
-		buf := make([]byte, MTUTrie.GetMTU(writeTo.(*net.UDPAddr).IP)) // ethernet
+
+		// not support jumbo frame
+		buf := make([]byte, MTUTrie.GetMTU(writeTo.(*net.UDPAddr).IP))
+
 		for {
 			src.SetReadDeadline(time.Now().Add(2 * time.Minute))
 			n, err := src.Read(buf)
@@ -112,11 +115,10 @@ func AcceptUDP(serv *net.UDPConn, index string) {
 
 	table := sync.Map{}
 
-	// support ethernet frame only, not support jumbo frame
-	recvBuf := make([]byte, MTU)
+	buf := make([]byte, MTU)
 
 	for {
-		n, addr, err := serv.ReadFrom(recvBuf)
+		n, addr, err := serv.ReadFrom(buf)
 		if err != nil {
 			if err, ok := err.(net.Error); ok && err.Temporary() {
 				continue
@@ -133,7 +135,7 @@ func AcceptUDP(serv *net.UDPConn, index string) {
 		}
 
 		if d, ok := table.Load(addr.String()); ok {
-			go d.(*net.UDPConn).Write(recvBuf[:n])
+			go d.(*net.UDPConn).Write(buf[:n])
 			continue
 		}
 
@@ -148,7 +150,7 @@ func AcceptUDP(serv *net.UDPConn, index string) {
 			table.Delete(addr.String())
 			proxy.Close()
 		}(addr)
-		go proxy.Write(recvBuf[:n])
+		go proxy.Write(buf[:n])
 	}
 }
 func DialTarget(r Rule, srcRAddr, srcLAddr net.Addr) (proxy net.Conn,err error) {
