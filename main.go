@@ -17,7 +17,7 @@ import (
 	"time"
 	kcp "github.com/xtaci/kcp-go"
 	"PortForwardGo/zlog"
-	"wego/util/ratelimit"
+	"gitee.com/kzquu/wego/util/ratelimit"
 	"flag"
 )
 
@@ -89,14 +89,14 @@ func main() {
 			flag.PrintDefaults()
 			os.Exit(0)
 		}
-	
+
         os.Remove(LogFile)
 		logfile_writer,err := os.OpenFile(LogFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
         if err == nil{
 		zlog.SetOutput(logfile_writer)
 		zlog.Info("Log file location: ",LogFile)
 		}
-		
+
 		zlog.Info("Node Version: ",version)
 
 		LoadMap()
@@ -110,7 +110,7 @@ func main() {
 	zlog.Fatal("Cannot read the config file. (Parse Error) " + err.Error())
    }
 
-    zlog.Info("API URL: ",apic.APIAddr)   
+    zlog.Info("API URL: ",apic.APIAddr)
 	GetRules()
 
 	for index, _ := range Setting.Config.Rules {
@@ -170,7 +170,7 @@ func NewAPIConnect(w http.ResponseWriter, r *http.Request){
 	   io.WriteString(w,fmt.Sprintln(err))
 	   return
 	}
-	
+
 	go func(){
 	Setting.mu.Lock()
 	if Setting.Config.Rules == nil{
@@ -184,7 +184,7 @@ func NewAPIConnect(w http.ResponseWriter, r *http.Request){
 	for index,_ := range NewConfig.Users {
 		Setting.Config.Users[index] = NewConfig.Users[index]
 	}
-    
+
 	for index, _ := range NewConfig.Rules {
 	    if NewConfig.Rules[index].Status == "Deleted" {
 			go func(index string){
@@ -296,8 +296,8 @@ func updateConfig() {
 		zlog.Error("Scheduled task update: ", err)
 		Setting.mu.Unlock()
 		return
-	} 
-	
+	}
+
 	err = json.Unmarshal(confF, &NewConfig)
 	if err != nil {
 		zlog.Error("Cannot read the port forward config file. (Parse Error) " + err.Error())
@@ -343,7 +343,7 @@ func saveConfig() {
 		Setting.mu.Unlock()
 		return
 	}
-	
+
 	Setting.mu.Unlock()
 	zlog.Success("Save config Completed")
 }
@@ -356,7 +356,7 @@ func SendListenError(i string){
 		"Token" : md5_encode(apic.APIToken),
 		"Version" : version,
 		"RuleID" : i,
-	}) 
+	})
 	sendRequest(apic.APIAddr,bytes.NewReader(jsonData),nil,"POST")
 }
 
@@ -448,4 +448,27 @@ func copyIO(src, dest net.Conn, index string) {
 	NowUser.Used += r
 	Setting.Config.Users[userid] = NowUser
 	Setting.mu.Unlock()
+}
+
+func limitWrite(dest net.Conn, index string, buf []byte) (int, error) {
+	var r int
+	var userid string
+	var err error
+
+	Setting.mu.RLock()
+	userid = Setting.Config.Rules[index].UserID
+	if Setting.Config.Users[userid].Speed != 0 {
+		bucket := ratelimit.New(Setting.Config.Users[userid].Speed * 128 * 1024)
+		Setting.mu.RUnlock()
+		r, err = ratelimit.Writer(dest, bucket).Write(buf)
+	} else {
+		Setting.mu.RUnlock()
+		r, err = dest.Write(buf)
+	}
+	Setting.mu.Lock()
+	NowUser := Setting.Config.Users[userid]
+	NowUser.Used += int64(r)
+	Setting.Config.Users[userid] = NowUser
+	Setting.mu.Unlock()
+	return r, err
 }
