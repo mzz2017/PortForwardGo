@@ -1,44 +1,36 @@
 package main
 
 import (
+	"PortForwardGo/zlog"
+	proxyprotocol "github.com/pires/go-proxyproto"
 	"net"
 	"sync"
 	"time"
-	"PortForwardGo/zlog"
-	proxyprotocol "github.com/pires/go-proxyproto"
 )
 
+const MTU = 65535
+
 type UDPDistribute struct {
-	Connected     bool
-	PropertyMutex sync.RWMutex
 	Conn          *(net.UDPConn)
 	RAddr         net.Addr
 	LAddr         net.Addr
-	Cache         chan []byte
 }
 
 func NewUDPDistribute(conn *(net.UDPConn), addr net.Addr) (*UDPDistribute) {
 	return &UDPDistribute{
-	    Connected:   true,
 		Conn:        conn,
 		RAddr:       addr,
 		LAddr:       conn.LocalAddr(),
-		Cache:       make(chan []byte, 16),
 	}
 }
 
 func (this *UDPDistribute) Close() error {
-	this.PropertyMutex.Lock()
-	if this.Connected{
-		this.Connected = false
-		close(this.Cache)
-	}
-	this.PropertyMutex.Unlock()
-	return nil
+	return this.Conn.Close()
 }
 
 func (this *UDPDistribute) Read(b []byte) (n int, err error) {
-	return copy(b, <-this.Cache), nil
+	n, _, err = this.Conn.ReadFrom(b)
+	return
 }
 
 func (this *UDPDistribute) Write(b []byte) (n int, err error) {
@@ -58,7 +50,6 @@ func (this *UDPDistribute) SetDeadline(t time.Time) error {
 }
 
 func (this *UDPDistribute) SetReadDeadline(t time.Time) error {
-	// FIXME
 	return this.Conn.SetReadDeadline(t)
 }
 
@@ -67,8 +58,6 @@ func (this *UDPDistribute) SetWriteDeadline(t time.Time) error {
 }
 
 func LoadUDPRules(i string){
-
-	clientc := make(chan net.Conn)
 
 	Setting.mu.Lock()
 	address, _ := net.ResolveUDPAddr("udp", ":"+Setting.Config.Rules[i].Listen)
@@ -85,28 +74,7 @@ func LoadUDPRules(i string){
 	Setting.Listener.UDP[i] = ln
 	Setting.mu.Unlock()
 
-	go AcceptUDP(ln, clientc)
-
-	for {
-		var conn net.Conn = nil
-		select {
-		case conn = <-clientc:
-			if conn == nil {
-				break
-			}else{
-				Setting.mu.RLock()
-				rule := Setting.Config.Rules[i]
-				Setting.mu.RUnlock()
-
-				if rule.Status != "Active" && rule.Status != "Created" {
-					conn.Close()
-					continue
-				}
-
-				go udp_handleRequest(conn,i,rule)
-			}
-		}
-	}
+	go AcceptUDP(ln,i)
 }
 
 func DeleteUDPRules(i string){
@@ -123,73 +91,79 @@ func DeleteUDPRules(i string){
 	Setting.mu.Unlock()
 }
 
-func udp_handleRequest(conn net.Conn, index string, r Rule) {
-    	proxy, err := ConnUDP(r.Forward)
-		if err != nil {
-			conn.Close()
-			return
-		}
-		defer proxy.Close()
-
-		if r.ProxyProtocolVersion != 0 {
-			header := proxyprotocol.HeaderProxyFromAddrs(byte(r.ProxyProtocolVersion),conn.RemoteAddr(),conn.LocalAddr())
-			header.WriteTo(proxy)
-		}
-
-		go copyIO(conn, proxy, index)
-
+func UDPRelay(src, dst *net.UDPConn, writeTo net.Addr, index string) {
 		// handle coping by hand to keep connection dynamically
-		buf := make([]byte, 1500) // ethernet
+		d := NewUDPDistribute(dst, writeTo)
+
+		// not support jumbo frame
+		buf := make([]byte, MTUTrie.GetMTU(writeTo.(*net.UDPAddr).IP))
+
 		for {
-			proxy.SetReadDeadline(time.Now().Add(2 * time.Minute))
-			n, err := proxy.Read(buf)
+			src.SetReadDeadline(time.Now().Add(2 * time.Minute))
+			n, err := src.Read(buf)
 			if err != nil {
 				return
 			}
-			_, err = limitWrite(conn, index, buf[:n])
+			_, err = limitWrite(d, index, buf[:n])
 			if err != nil {
 				return
 			}
 		}
 }
 
-func AcceptUDP(serv *net.UDPConn, clientc chan net.Conn) {
+func AcceptUDP(serv *net.UDPConn, index string) {
 
-	table := make(map[string]*UDPDistribute)
-	// support ethernet frame only, not support jumbo frame
-	recvBuf := make([]byte, 1500)
+	table := sync.Map{}
+
+	buf := make([]byte, MTU)
 
 	for {
-		n, addr, err := serv.ReadFrom(recvBuf)
+		n, addr, err := serv.ReadFrom(buf)
 		if err != nil {
 			if err, ok := err.(net.Error); ok && err.Temporary() {
 				continue
 			}
-			clientc <- nil
 			break
 		}
-		// avoid competition
-		buf := make([]byte, n)
-		copy(buf, recvBuf)
 
-		if d, ok := table[addr.String()]; ok {
-			d.PropertyMutex.RLock()
-			if d.Connected {
-				d.PropertyMutex.RUnlock()
-				d.Cache <- buf
-				continue
-			} else {
-				d.PropertyMutex.RUnlock()
-				delete(table, addr.String())
-			}
+		Setting.mu.RLock()
+		rule := Setting.Config.Rules[index]
+		Setting.mu.RUnlock()
+
+		if rule.Status != "Active" && rule.Status != "Created" {
+			continue
 		}
-		conn := NewUDPDistribute(serv, addr)
-		table[addr.String()] = conn
-		conn.Cache <- buf
-		clientc <- conn
+
+		if d, ok := table.Load(addr.String()); ok {
+			go d.(*net.UDPConn).Write(buf[:n])
+			continue
+		}
+
+		proxy, err := DialTarget(rule, addr, serv.LocalAddr())
+		if err != nil {
+			continue
+		}
+		table.Store(addr.String(), proxy)
+
+		go func(addr net.Addr) {
+			UDPRelay(proxy.(*net.UDPConn), serv, addr, index)
+			table.Delete(addr.String())
+			proxy.Close()
+		}(addr)
+		go proxy.Write(buf[:n])
 	}
 }
-
+func DialTarget(r Rule, srcRAddr, srcLAddr net.Addr) (proxy net.Conn,err error) {
+	proxy, err = ConnUDP(r.Forward)
+	if err != nil {
+		return
+	}
+	if r.ProxyProtocolVersion != 0 {
+		header := proxyprotocol.HeaderProxyFromAddrs(byte(r.ProxyProtocolVersion), srcRAddr, srcLAddr)
+		header.WriteTo(proxy)
+	}
+	return
+}
 func ConnUDP(address string) (net.Conn, error) {
 	conn, err := net.DialTimeout("udp", address, 10*time.Second)
 	if err != nil {

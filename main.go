@@ -30,28 +30,28 @@ var LogFile string
 
 type CSafeRule struct {
 	Listener Listener
-    Config Config
-	mu    sync.RWMutex
+	Config   Config
+	mu       sync.RWMutex
 }
 
-type Listener struct{
+type Listener struct {
 	TCP map[string]*net.TCPListener
 	UDP map[string]*net.UDPConn
 	KCP map[string]*kcp.Listener
-	WS map[string]*net.TCPListener
+	WS  map[string]*net.TCPListener
 	WSC map[string]*net.TCPListener
 }
 
-type Config struct{
+type Config struct {
 	UpdateInfoCycle int
-	EnableAPI bool
-	APIPort string
-	Listen map[string]Listen
-	Rules map[string]Rule
-	Users map[string]User
+	EnableAPI       bool
+	APIPort         string
+	Listen          map[string]Listen
+	Rules           map[string]Rule
+	Users           map[string]User
 }
 
-type Listen struct{
+type Listen struct {
 	Enable bool
 	Port string
 }
