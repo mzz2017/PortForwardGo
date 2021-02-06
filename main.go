@@ -445,7 +445,7 @@ func copyIO(src, dest net.Conn, index string) {
     }
     Setting.mu.Lock()
 	NowUser :=Setting.Config.Users[userid]
-	NowUser.Used += r
+	NowUser.Used += r * 2
 	Setting.Config.Users[userid] = NowUser
 	Setting.mu.Unlock()
 }
@@ -467,7 +467,7 @@ func limitWrite(dest net.Conn, index string, buf []byte) (int, error) {
 	}
 	Setting.mu.Lock()
 	NowUser := Setting.Config.Users[userid]
-	NowUser.Used += int64(r)
+	NowUser.Used += int64(r) * 2
 	Setting.Config.Users[userid] = NowUser
 	Setting.mu.Unlock()
 	return r, err
