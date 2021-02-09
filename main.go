@@ -1,24 +1,25 @@
 package main
 
 import (
+	"PortForwardGo/zlog"
+	"bytes"
+	"crypto/md5"
+	"encoding/hex"
 	"encoding/json"
+	"flag"
+	"fmt"
 	"io"
 	"io/ioutil"
-	"net/http"
-	"bytes"
 	"net"
+	"net/http"
 	"os"
-	"fmt"
 	"os/signal"
 	"sync"
 	"syscall"
-	"crypto/md5"
-	"encoding/hex"
 	"time"
-	kcp "github.com/xtaci/kcp-go"
-	"PortForwardGo/zlog"
+
 	"gitee.com/kzquu/wego/util/ratelimit"
-	"flag"
+	kcp "github.com/xtaci/kcp-go"
 )
 
 var Setting CSafeRule
@@ -80,6 +81,7 @@ type APIConfig struct {
 var apic APIConfig
 
 func main() {
+	{
 		flag.StringVar(&ConfigFile, "config", "config.json", "The config file location.")
 		flag.StringVar(&LogFile,"log","run.log","The log file location.")
 		help := flag.Bool("h", false, "Show help")
@@ -89,6 +91,15 @@ func main() {
 			flag.PrintDefaults()
 			os.Exit(0)
 		}
+	}
+
+	{
+		Setting.Listener.TCP = make(map[string]*net.TCPListener)
+		Setting.Listener.UDP = make(map[string]*net.UDPConn)
+		Setting.Listener.KCP = make(map[string]*kcp.Listener)
+		Setting.Listener.WS = make(map[string]*net.TCPListener)
+		Setting.Listener.WSC = make(map[string]*net.TCPListener)
+	}
 
         os.Remove(LogFile)
 		logfile_writer,err := os.OpenFile(LogFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
@@ -99,50 +110,43 @@ func main() {
 
 		zlog.Info("Node Version: ",version)
 
-		LoadMap()
-
-    apif, err := ioutil.ReadFile(ConfigFile)
+        apif, err := ioutil.ReadFile(ConfigFile)
 		if err != nil {
 			zlog.Fatal("Cannot read the config file. (io Error) " + err.Error())
 		}
-   err = json.Unmarshal(apif,&apic)
-   if err != nil {
-	zlog.Fatal("Cannot read the config file. (Parse Error) " + err.Error())
-   }
+		
+		err = json.Unmarshal(apif,&apic)
+        if err != nil {
+	       zlog.Fatal("Cannot read the config file. (Parse Error) " + err.Error())
+        }
 
-    zlog.Info("API URL: ",apic.APIAddr)
-	GetRules()
-
-	for index, _ := range Setting.Config.Rules {
-		go func(index string){
-			LoadNewRules(index)
-		}(index)
-	}
+        zlog.Info("API URL: ",apic.APIAddr)
+    	getConfig()
 
 	go func(){
 		if Setting.Config.EnableAPI == true {
-		zlog.Info("[HTTP API] Listening " , Setting.Config.APIPort," Path: /",md5_encode(apic.APIToken)," Method:POST")
-		route := http.NewServeMux()
-		route.HandleFunc("/",func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(404)
-			io.WriteString(w,Page404)
-			return
-		})
+    		zlog.Info("[HTTP API] Listening " , Setting.Config.APIPort," Path: /",md5_encode(apic.APIToken)," Method:POST")
+	    	route := http.NewServeMux()
+		    route.HandleFunc("/",func(w http.ResponseWriter, r *http.Request) {
+			    w.WriteHeader(404)
+		    	io.WriteString(w,Page404)
+			    return
+		    })
 	    route.HandleFunc("/" + md5_encode(apic.APIToken), NewAPIConnect)
 	    err := http.ListenAndServe(":" + Setting.Config.APIPort,route)
         if err != nil {
-        zlog.Error("[HTTP API] ", err)
+            zlog.Error("[HTTP API] ", err)
         }
 	  }
     }()
 
-	go func(apic APIConfig) {
+	go func() {
 		for {
 	      	saveInterval := time.Duration(Setting.Config.UpdateInfoCycle) * time.Second
 			time.Sleep(saveInterval)
 			updateConfig()
 		}
-	}(apic)
+	}()
 
 	sigs := make(chan os.Signal, 1)
 	done := make(chan bool, 1)
@@ -171,52 +175,39 @@ func NewAPIConnect(w http.ResponseWriter, r *http.Request){
 	   return
 	}
 
-	go func(){
-	Setting.mu.Lock()
-	if Setting.Config.Rules == nil{
-	Setting.Config.Rules = make(map[string]Rule)
-	}
-
-	if Setting.Config.Users == nil{
-		Setting.Config.Users = make(map[string]User)
-	}
-
-	for index,_ := range NewConfig.Users {
-		Setting.Config.Users[index] = NewConfig.Users[index]
-	}
-
-	for index, _ := range NewConfig.Rules {
-	    if NewConfig.Rules[index].Status == "Deleted" {
-			go func(index string){
-			DeleteRules(index)
-			}(index)
-			continue
-    	}else if NewConfig.Rules[index].Status == "Created" {
-			Setting.Config.Rules[index] = NewConfig.Rules[index]
-			go func(index string){
-			LoadNewRules(index)
-			}(index)
-			continue
-		}else{
-			Setting.Config.Rules[index] = NewConfig.Rules[index]
-			continue
-		}
-	  }
-	Setting.mu.Unlock()
-	}()
 	w.WriteHeader(200)
 	io.WriteString(w,"Success")
-	return
-}
 
-func LoadMap(){
-	Setting.mu.Lock()
-	Setting.Listener.TCP = make(map[string]*net.TCPListener)
-	Setting.Listener.UDP = make(map[string]*net.UDPConn)
-	Setting.Listener.KCP = make(map[string]*kcp.Listener)
-	Setting.Listener.WS = make(map[string]*net.TCPListener)
-	Setting.Listener.WSC = make(map[string]*net.TCPListener)
-	Setting.mu.Unlock()
+	go func(){
+		Setting.mu.Lock()
+		if Setting.Config.Rules == nil {
+			Setting.Config.Rules = make(map[string]Rule)
+		}
+
+		if Setting.Config.Users == nil {
+			Setting.Config.Users = make(map[string]User)
+		}
+
+		for index,_ := range NewConfig.Users {
+			Setting.Config.Users[index] = NewConfig.Users[index]
+		}
+
+		for index, _ := range NewConfig.Rules {
+		    if NewConfig.Rules[index].Status == "Deleted" {
+				go DeleteRules(index)
+				continue
+			}else if NewConfig.Rules[index].Status == "Created" {
+				Setting.Config.Rules[index] = NewConfig.Rules[index]
+				go LoadNewRules(index)
+				continue
+			}else{
+				Setting.Config.Rules[index] = NewConfig.Rules[index]
+				continue
+			}
+		}
+		Setting.mu.Unlock()
+	}()
+	return
 }
 
 func LoadListen(){
@@ -233,24 +224,27 @@ func LoadListen(){
 }
 
 func DeleteRules(i string){
-if _,ok := Setting.Config.Rules[i];ok{
+    if _,ok := Setting.Config.Rules[i];!ok{
+        return
+    }
+	
 	Protocol := Setting.Config.Rules[i].Protocol
-	if Protocol == "tcp" {
-		go DeleteTCPRules(i)
-    }else if Protocol == "udp" {
-		go DeleteUDPRules(i)
-	}else if Protocol == "kcp" {
-		go DeleteKCPRules(i)
-	}else if Protocol == "http" {
-		go DeleteHttpRules(i)
-	}else if Protocol == "https" {
-		go DeleteHttpsRules(i)
-	}else if Protocol == "ws" {
-		go DeleteWSRules(i)
-	}else if Protocol == "wsc" {
-		go DeleteWSCRules(i)
+	switch Protocol {
+	case "tcp":
+		DeleteTCPRules(i)
+    case "udp":
+		DeleteUDPRules(i)
+	case "kcp":
+		DeleteKCPRules(i)
+	case "http":
+		DeleteHttpRules(i)
+	case "https":
+		DeleteHttpsRules(i)
+	case "ws":
+		DeleteWSRules(i)
+	case "wsc":
+		DeleteWSCRules(i)
 	}
-}
 }
 
 func LoadNewRules(i string){
@@ -307,14 +301,10 @@ func updateConfig() {
 	Setting.Config = NewConfig
 	for index, rule := range Setting.Config.Rules {
 		if rule.Status == "Deleted" {
-			go func(index string){
-				DeleteRules(index)
-			}(index)
+			go DeleteRules(index)
 			continue
 	    }else if rule.Status == "Created" {
-			go func(index string){
-			LoadNewRules(index)
-			}(index)
+			go LoadNewRules(index)
 			continue
 		}
 	}
@@ -360,7 +350,7 @@ func SendListenError(i string){
 	sendRequest(apic.APIAddr,bytes.NewReader(jsonData),nil,"POST")
 }
 
-func GetRules(){
+func getConfig(){
 	var NewConfig Config
     Setting.mu.Lock()
 	jsonData,_ := json.Marshal(map[string]interface{}{
@@ -392,6 +382,10 @@ func GetRules(){
 	zlog.Info("Update Cycle: ",Setting.Config.UpdateInfoCycle," seconds")
 	Setting.mu.Unlock()
 	LoadListen()
+
+	for index, _ := range NewConfig.Rules {
+		go LoadNewRules(index)
+	}
 }
 
 func sendRequest(url string, body io.Reader, addHeaders map[string]string, method string) (statuscode int,resp []byte,err error) {
@@ -430,45 +424,24 @@ func copyIO(src, dest net.Conn, index string) {
 	defer src.Close()
 	defer dest.Close()
 
-	var r int64
-	var userid string
+    var r int64
+    var userid string
 
 	Setting.mu.RLock()
 	userid = Setting.Config.Rules[index].UserID
-	if Setting.Config.Users[userid].Speed != 0{
-	bucket := ratelimit.New(Setting.Config.Users[userid].Speed * 128 * 1024)
-	Setting.mu.RUnlock()
-	r, _ = io.Copy(ratelimit.Writer(dest,bucket),src)
+
+	if Setting.Config.Users[userid].Speed != 0 {
+		bucket := ratelimit.New(Setting.Config.Users[userid].Speed * 128 * 1024)
+		Setting.mu.RUnlock()
+		r, _ = io.Copy(ratelimit.Writer(dest,bucket),src)
 	}else{
-	Setting.mu.RUnlock()
-	r, _ = io.Copy(dest, src)
-    }
+		Setting.mu.RUnlock()
+		r, _ = io.Copy(dest, src)
+	}
+	
     Setting.mu.Lock()
 	NowUser :=Setting.Config.Users[userid]
 	NowUser.Used += r * 2
 	Setting.Config.Users[userid] = NowUser
 	Setting.mu.Unlock()
-}
-
-func limitWrite(dest net.Conn, index string, buf []byte) (int, error) {
-	var r int
-	var userid string
-	var err error
-
-	Setting.mu.RLock()
-	userid = Setting.Config.Rules[index].UserID
-	if Setting.Config.Users[userid].Speed != 0 {
-		bucket := ratelimit.New(Setting.Config.Users[userid].Speed * 128 * 1024)
-		Setting.mu.RUnlock()
-		r, err = ratelimit.Writer(dest, bucket).Write(buf)
-	} else {
-		Setting.mu.RUnlock()
-		r, err = dest.Write(buf)
-	}
-	Setting.mu.Lock()
-	NowUser := Setting.Config.Users[userid]
-	NowUser.Used += int64(r) * 2
-	Setting.Config.Users[userid] = NowUser
-	Setting.mu.Unlock()
-	return r, err
 }

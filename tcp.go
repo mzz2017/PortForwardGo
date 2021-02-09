@@ -31,25 +31,27 @@ func LoadTCPRules(i string) {
 			break
 		}
 		
-		Setting.mu.RLock()
-		rule := Setting.Config.Rules[i]
-		Setting.mu.RUnlock()
+		go func(){
+		    Setting.mu.RLock()
+		    rule := Setting.Config.Rules[i]
+	    	Setting.mu.RUnlock()
 
-		if rule.Status != "Active" && rule.Status != "Created" {
-			conn.Close()
-			continue
-		}
+	    	if rule.Status != "Active" && rule.Status != "Created" {
+		    	conn.Close()
+		    	return
+		    }
 		
-		go tcp_handleRequest(conn, i, rule)
-	}
+	    	go tcp_handleRequest(conn, i, rule)
+  	    }()
+    }
 }
 
 func DeleteTCPRules(i string){
 	if _,ok :=Setting.Listener.TCP[i];ok {
 		err :=Setting.Listener.TCP[i].Close()
 		for err!=nil {
-		time.Sleep(time.Second)
-		err = Setting.Listener.TCP[i].Close()
+		    time.Sleep(time.Second)
+	    	err = Setting.Listener.TCP[i].Close()
 		}
 	    delete(Setting.Listener.TCP,i)
 	}
@@ -62,13 +64,13 @@ func DeleteTCPRules(i string){
 func tcp_handleRequest(conn net.Conn, index string, r Rule) {
 	proxy, err := net.Dial("tcp", r.Forward)
 	if err != nil {
-		_ = conn.Close()
+		conn.Close()
 		return
 	}
 	
 	if r.ProxyProtocolVersion != 0 {
-	header := proxyprotocol.HeaderProxyFromAddrs(byte(r.ProxyProtocolVersion),conn.RemoteAddr(),conn.LocalAddr())
-	header.WriteTo(proxy)
+    	header := proxyprotocol.HeaderProxyFromAddrs(byte(r.ProxyProtocolVersion),conn.RemoteAddr(),conn.LocalAddr())
+    	header.WriteTo(proxy)
 	}
 	
 	go copyIO(conn, proxy, index)
