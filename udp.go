@@ -99,7 +99,7 @@ func UDPRelay(src, dst *net.UDPConn, writeTo net.Addr, index string) {
 		buf := make([]byte, MTUTrie.GetMTU(writeTo.(*net.UDPAddr).IP))
 
 		for {
-			src.SetReadDeadline(time.Now().Add(2 * time.Minute))
+			src.SetReadDeadline(time.Now().Add(5 * time.Minute))
 			n, err := src.Read(buf)
 			if err != nil {
 				return
@@ -135,6 +135,7 @@ func AcceptUDP(serv *net.UDPConn, index string) {
 		}
 
 		if d, ok := table.Load(addr.String()); ok {
+			d.(*net.UDPConn).SetReadDeadline(time.Now().Add(5 * time.Minute))
 			go d.(*net.UDPConn).Write(buf[:n])
 			continue
 		}
