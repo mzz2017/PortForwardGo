@@ -1,7 +1,7 @@
 @echo off
 set UserName=CoiaPrant
 set Name=PortForwardGo
-set Version=1.0.6
+set Version=1.0.7
 
 echo %Version%>version
 

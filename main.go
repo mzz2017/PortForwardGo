@@ -443,4 +443,7 @@ func copyIO(src, dest net.Conn, index string) {
 	NowUser.Used += r * 2
 	Setting.Config.Users[userid] = NowUser
 	Setting.mu.Unlock()
+	if NowUser.Quota <=NowUser.Used {
+        go updateConfig()
+	}
 }
