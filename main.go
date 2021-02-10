@@ -33,6 +33,7 @@ type CSafeRule struct {
 	Listener Listener
 	Config   Config
 	mu       sync.RWMutex
+	Update   sync.Locker
 }
 
 type Listener struct {
@@ -270,34 +271,40 @@ func LoadNewRules(i string) {
 }
 
 func updateConfig() {
+	defer Setting.Update.Unlock()
 	var NewConfig Config
-	Setting.mu.Lock()
+
+	Setting.Update.Lock()
+
+	Setting.mu.RLock()
+	NowConfig := Setting.Config
+	Setting.mu.RUnlock()
 
 	jsonData, _ := json.Marshal(map[string]interface{}{
 		"Action":  "UpdateInfo",
 		"NodeID":  apic.NodeID,
 		"Token":   md5_encode(apic.APIToken),
-		"Info":    &Setting.Config,
+		"Info":    &NowConfig,
 		"Version": version,
 	})
+
 	status, confF, err := sendRequest(apic.APIAddr, bytes.NewReader(jsonData), nil, "POST")
 	if status == 503 {
 		zlog.Error("Scheduled task update error,The remote server returned an error message: ", string(confF))
-		Setting.mu.Unlock()
 		return
 	}
 	if err != nil {
 		zlog.Error("Scheduled task update: ", err)
-		Setting.mu.Unlock()
 		return
 	}
 
 	err = json.Unmarshal(confF, &NewConfig)
 	if err != nil {
 		zlog.Error("Cannot read the port forward config file. (Parse Error) " + err.Error())
-		Setting.mu.Unlock()
 		return
 	}
+
+	Setting.mu.Lock()
 	Setting.Config = NewConfig
 	for index, rule := range Setting.Config.Rules {
 		if rule.Status == "Deleted" {
@@ -419,31 +426,34 @@ func md5_encode(s string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-func copyIO(src, dest net.Conn, index string) {
+func copyIO(src, dest net.Conn, userid string) {
 	defer src.Close()
 	defer dest.Close()
 
 	var r int64
-	var userid string
 
 	Setting.mu.RLock()
-	userid = Setting.Config.Rules[index].UserID
+	NowUser := Setting.Config.Users[userid]
+	Setting.mu.RUnlock()
 
-	if Setting.Config.Users[userid].Speed != 0 {
-		bucket := ratelimit.New(Setting.Config.Users[userid].Speed * 128 * 1024)
-		Setting.mu.RUnlock()
+	if NowUser.Speed != 0 {
+		bucket := ratelimit.New(NowUser.Speed * 128 * 1024)
 		r, _ = io.Copy(ratelimit.Writer(dest, bucket), src)
 	} else {
-		Setting.mu.RUnlock()
 		r, _ = io.Copy(dest, src)
 	}
 
-	Setting.mu.Lock()
-	NowUser := Setting.Config.Users[userid]
 	NowUser.Used += r * 2
+
+    Setting.Update.Lock()
+	Setting.mu.Lock()
+
 	Setting.Config.Users[userid] = NowUser
+
 	Setting.mu.Unlock()
-	if NowUser.Quota <=NowUser.Used {
-        go updateConfig()
+	Setting.Update.Unlock()
+	
+	if NowUser.Quota <= NowUser.Used {
+		go updateConfig()
 	}
 }

@@ -174,6 +174,6 @@ func udp_handleRequest(conn net.Conn, index string, r Rule) {
 		return
 	}
 
-	go copyIO(conn, proxy, index)
-	go copyIO(proxy, conn, index)
+	go copyIO(conn, proxy, r.UserID)
+	go copyIO(proxy, conn, r.UserID)
 }

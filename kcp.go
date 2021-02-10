@@ -33,15 +33,15 @@ func LoadKCPRules(i string) {
 		}
 
 		Setting.mu.RLock()
-		rule := Setting.Config.Rules[i]
+		r := Setting.Config.Rules[i]
 		Setting.mu.RUnlock()
 
-		if rule.Status != "Active" && rule.Status != "Created" {
+		if r.Status != "Active" && r.Status != "Created" {
 			conn.Close()
 			continue
 		}
 
-		go kcp_handleRequest(conn, i, rule)
+		go kcp_handleRequest(conn, i, r)
 	}
 }
 
@@ -63,7 +63,7 @@ func DeleteKCPRules(i string) {
 func kcp_handleRequest(conn net.Conn, index string, r Rule) {
 	proxy, err := kcp.Dial(r.Forward)
 	if err != nil {
-		_ = conn.Close()
+		conn.Close()
 		return
 	}
 
@@ -72,6 +72,6 @@ func kcp_handleRequest(conn net.Conn, index string, r Rule) {
 		header.WriteTo(proxy)
 	}
 
-	go copyIO(conn, proxy, index)
-	go copyIO(proxy, conn, index)
+	go copyIO(conn, proxy, r.UserID)
+	go copyIO(proxy, conn, r.UserID)
 }

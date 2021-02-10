@@ -70,28 +70,28 @@ func DeleteWSRules(i string) {
 func WS_Handle(i string, ws *websocket.Conn) {
 	ws.PayloadType = websocket.BinaryFrame
 	Setting.mu.RLock()
-	rule := Setting.Config.Rules[i]
+	r := Setting.Config.Rules[i]
 	Setting.mu.RUnlock()
 
-	if rule.Status != "Active" && rule.Status != "Created" {
+	if r.Status != "Active" && r.Status != "Created" {
 		ws.Close()
 		return
 	}
 
-	conn, err := net.Dial("tcp", rule.Forward)
+	conn, err := net.Dial("tcp", r.Forward)
 	if err != nil {
 		ws.Close()
 		return
 	}
 
-	if rule.ProxyProtocolVersion != 0 {
-		header := proxyprotocol.HeaderProxyFromAddrs(byte(rule.ProxyProtocolVersion), &Addr{
+	if r.ProxyProtocolVersion != 0 {
+		header := proxyprotocol.HeaderProxyFromAddrs(byte(r.ProxyProtocolVersion), &Addr{
 			NetworkType:   ws.Request().Header.Get("X-Forward-Protocol"),
 			NetworkString: ws.Request().Header.Get("X-Forward-Address"),
 		}, conn.LocalAddr())
 		header.WriteTo(conn)
 	}
 
-	go copyIO(ws, conn, i)
-	copyIO(conn, ws, i)
+	go copyIO(ws, conn, r.UserID)
+	copyIO(conn, ws, r.UserID)
 }

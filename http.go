@@ -88,10 +88,10 @@ func http_handle(conn net.Conn) {
 	}
 
 	Setting.mu.RLock()
-	rule := Setting.Config.Rules[i]
+	r := Setting.Config.Rules[i]
 	Setting.mu.RUnlock()
 
-	if rule.Status != "Active" && rule.Status != "Created" {
+	if r.Status != "Active" && r.Status != "Created" {
 		conn.Write([]byte(HttpStatus(503)))
 		conn.Write([]byte("\n"))
 		conn.Write([]byte(Page503))
@@ -99,7 +99,7 @@ func http_handle(conn net.Conn) {
 		return
 	}
 
-	backend, error := net.Dial("tcp", rule.Forward)
+	proxy, error := net.Dial("tcp", r.Forward)
 	if error != nil {
 		conn.Write([]byte(HttpStatus(522)))
 		conn.Write([]byte("\n"))
@@ -108,19 +108,19 @@ func http_handle(conn net.Conn) {
 		return
 	}
 
-	if rule.ProxyProtocolVersion != 0 {
-		header := proxyprotocol.HeaderProxyFromAddrs(byte(rule.ProxyProtocolVersion), conn.RemoteAddr(), conn.LocalAddr())
-		header.WriteTo(backend)
+	if r.ProxyProtocolVersion != 0 {
+		header := proxyprotocol.HeaderProxyFromAddrs(byte(r.ProxyProtocolVersion), conn.RemoteAddr(), conn.LocalAddr())
+		header.WriteTo(proxy)
 	}
 
 	for element := readLines.Front(); element != nil; element = element.Next() {
 		line := element.Value.(string)
-		backend.Write([]byte(line))
-		backend.Write([]byte("\n"))
+		proxy.Write([]byte(line))
+		proxy.Write([]byte("\n"))
 	}
 
-	go copyIO(conn, backend, i)
-	go copyIO(backend, conn, i)
+	go copyIO(conn, proxy, r.UserID)
+	go copyIO(proxy, conn, r.UserID)
 }
 
 func ParseAddrToIP(addr string) string {

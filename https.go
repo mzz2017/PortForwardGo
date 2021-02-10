@@ -151,30 +151,30 @@ func https_handle(conn net.Conn) {
 	}
 
 	Setting.mu.RLock()
-	rule := Setting.Config.Rules[i]
+	r := Setting.Config.Rules[i]
 	Setting.mu.RUnlock()
 
-	if rule.Status != "Active" && rule.Status != "Created" {
+	if r.Status != "Active" && r.Status != "Created" {
 		conn.Close()
 		return
 	}
 
-	backend, error := net.Dial("tcp", rule.Forward)
+	proxy, error := net.Dial("tcp", r.Forward)
 	if error != nil {
 		conn.Close()
 		return
 	}
 
-	if rule.ProxyProtocolVersion != 0 {
-		header := proxyprotocol.HeaderProxyFromAddrs(byte(rule.ProxyProtocolVersion), conn.RemoteAddr(), conn.LocalAddr())
-		header.WriteTo(backend)
+	if r.ProxyProtocolVersion != 0 {
+		header := proxyprotocol.HeaderProxyFromAddrs(byte(r.ProxyProtocolVersion), conn.RemoteAddr(), conn.LocalAddr())
+		header.WriteTo(proxy)
 	}
 
-	backend.Write(firstByte)
-	backend.Write(versionBytes)
-	backend.Write(restLengthBytes)
-	backend.Write(rest)
+	proxy.Write(firstByte)
+	proxy.Write(versionBytes)
+	proxy.Write(restLengthBytes)
+	proxy.Write(rest)
 
-	go copyIO(conn, backend, i)
-	go copyIO(backend, conn, i)
+	go copyIO(conn, proxy, r.UserID)
+	go copyIO(proxy, conn, r.UserID)
 }
