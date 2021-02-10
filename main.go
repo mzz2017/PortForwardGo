@@ -23,7 +23,6 @@ import (
 )
 
 var Setting CSafeRule
-
 var version string
 
 var ConfigFile string
@@ -33,7 +32,7 @@ type CSafeRule struct {
 	Listener Listener
 	Config   Config
 	mu       sync.RWMutex
-	Update   sync.Locker
+	Update   sync.Mutex
 }
 
 type Listener struct {
